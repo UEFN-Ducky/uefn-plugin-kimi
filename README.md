@@ -16,3 +16,7 @@ Writes `deploy/kimi-1.0.0.ducky-plugin.zip` (scripts/ and deploy/ are not packed
 ## Secrets
 
 Never commit tokens or keys. The app stores `kimi` locally (DPAPI), not in this package.
+
+## License
+
+MIT. Copyright (c) 2026 Mindful Path Company, LLC. See [LICENSE](LICENSE).
