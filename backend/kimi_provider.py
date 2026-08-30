@@ -95,6 +95,9 @@ class KimiProvider:
             "stream": True,
             "stream_options": {"include_usage": True},
         }
+        cache_key = (cache.prompt_cache_key if cache else "") or ""
+        if cache_key:
+            create_kwargs["prompt_cache_key"] = cache_key
 
         stream = client.chat.completions.create(**create_kwargs)
         for chunk in stream:
