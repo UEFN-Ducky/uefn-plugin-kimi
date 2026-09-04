@@ -17,19 +17,6 @@ _CACHE_TTL_S = 6 * 3600.0
 
 _KIMI_MODELS_CACHE: dict[str, tuple[float, list[ModelInfo]]] = {}
 
-# Fallback when /v1/models is unavailable (platform.kimi.ai chat API models).
-_FALLBACK_MODELS: tuple[tuple[str, bool, int | None], ...] = (
-    ("kimi-k3", False, None),
-    ("kimi-k2.7", False, None),
-    ("kimi-k2.7-code", False, None),
-    ("moonshot-v1-8k", False, 8192),
-    ("moonshot-v1-32k", False, 32768),
-    ("moonshot-v1-128k", False, 131072),
-    ("moonshot-v1-8k-vision-preview", True, 8192),
-    ("moonshot-v1-32k-vision-preview", True, 32768),
-    ("moonshot-v1-128k-vision-preview", True, 131072),
-)
-
 
 def _key_hash(api_key: str) -> str:
     return hashlib.sha256(api_key.strip().encode("utf-8")).hexdigest()
@@ -41,19 +28,6 @@ def clear_model_cache() -> None:
 
 def fetch_models(api_key: str, **_kw: Any) -> list[ModelInfo]:
     return _fetch_kimi(api_key)
-
-
-def _fallback_models() -> list[ModelInfo]:
-    return [
-        ModelInfo(
-            id=mid,
-            display_name=mid,
-            supports_vision=vision,
-            supports_tools=True,
-            context_limit=ctx,
-        )
-        for mid, vision, ctx in _FALLBACK_MODELS
-    ]
 
 
 def _info_from_id(model_id: str) -> ModelInfo:
@@ -95,10 +69,6 @@ def _fetch_kimi(api_key: str) -> list[ModelInfo]:
         models.sort(key=lambda m: m.id)
     except Exception as exc:
         _log.warning("Kimi /v1/models unavailable: %s", exc)
-        models = _fallback_models()
-
-    if not models:
-        models = _fallback_models()
 
     _cache_put(_KIMI_MODELS_CACHE, cache_key, (time.time(), models))
     return list(models)
