@@ -1,7 +1,7 @@
 {
   "id": "kimi",
   "kind": "plugin",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "label": "Kimi",
   "description": "Kimi API (Moonshot Open Platform) for Settings → LLMs. Install from Store → Gateways, then enable to show Kimi under Providers & Keys.",
   "min_app_version": "1.0.523",
@@ -26,9 +26,23 @@
       "settings_tab": "LLMs",
       "steps": [
         {
-          "target": "settings.llms.section.llms",
-          "title": "Providers & Keys",
-          "body": "Kimi lives under Settings → LLMs. Open Providers & Keys to paste your Moonshot/Kimi API key from platform.kimi.ai.",
+          "target": "settings.llms.provider.kimi",
+          "title": "Open Kimi",
+          "body": "Press the Kimi row in this table. The page slides open so you can paste your API key.",
+          "advance": "require_click",
+          "mode": "rect"
+        },
+        {
+          "target": "settings.llms.provider.key",
+          "title": "API key",
+          "body": "Paste your Moonshot/Kimi API key from platform.kimi.ai.",
+          "advance": "next",
+          "mode": "rect"
+        },
+        {
+          "target": "settings.llms.provider.save",
+          "title": "Test & Save",
+          "body": "Press Test & Save after you paste a key.",
           "advance": "require_click",
           "mode": "rect"
         }
