@@ -1,10 +1,10 @@
 {
   "id": "kimi",
   "kind": "plugin",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "label": "Kimi",
   "description": "Kimi API (Moonshot Open Platform) for Settings → LLMs. Install from Store → Gateways, then enable to show Kimi under Providers & Keys.",
-  "min_app_version": "1.0.523",
+  "min_app_version": "1.2.45",
   "default_enabled": true,
   "secret_keys": [
     "kimi"

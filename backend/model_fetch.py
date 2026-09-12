@@ -41,12 +41,15 @@ def _info_from_id(model_id: str) -> ModelInfo:
         ctx = 32768
     elif "8k" in lower:
         ctx = 8192
+    from .kimi_provider import kimi_supports_thinking
+
     return ModelInfo(
         id=mid,
         display_name=mid,
         supports_vision=vision,
         supports_tools=True,
         context_limit=ctx,
+        supports_thinking_effort=kimi_supports_thinking(mid),
     )
 
 

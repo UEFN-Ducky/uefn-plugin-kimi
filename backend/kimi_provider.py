@@ -15,14 +15,39 @@ from backend.agent.providers.base import (
 )
 from backend.agent.providers.cache_utils import openai_system_messages, parse_openai_usage
 from backend.agent.providers.thinking import ThinkSplitter, reasoning_from_delta
+from backend.agent.thinking_effort import normalize_thinking_effort
 
 KIMI_BASE_URL = "https://api.moonshot.ai/v1"
 
+_K3_EFFORT = {"low": "low", "medium": "high", "high": "max"}
+
+
+def kimi_supports_thinking(model: str) -> bool:
+    mid = (model or "").strip().lower()
+    if "k2.7" in mid or "k2-7" in mid:
+        return False
+    return "kimi-k3" in mid or "k2.5" in mid or "k2-5" in mid or "k2.6" in mid or "k2-6" in mid
+
+
+def kimi_effort_body(model: str, thinking_effort: str) -> dict[str, Any]:
+    mid = (model or "").strip().lower()
+    effort = normalize_thinking_effort(thinking_effort)
+    if "kimi-k3" in mid:
+        if effort == "off":
+            return {"reasoning_effort": "low"}
+        return {"reasoning_effort": _K3_EFFORT.get(effort, "high")}
+    if "k2.7" in mid or "k2-7" in mid:
+        return {}
+    if "k2.5" in mid or "k2-5" in mid or "k2.6" in mid or "k2-6" in mid:
+        return {"thinking": {"type": "disabled" if effort == "off" else "enabled"}}
+    return {}
+
 
 class KimiProvider:
-    def __init__(self, api_key: str, model: str) -> None:
+    def __init__(self, api_key: str, model: str, *, thinking_effort: str = "off", **_kw: Any) -> None:
         self._api_key = api_key
         self._model = model
+        self._thinking_effort = normalize_thinking_effort(thinking_effort)
 
     def _client(self):
         from openai import OpenAI
@@ -98,6 +123,9 @@ class KimiProvider:
         cache_key = (cache.prompt_cache_key if cache else "") or ""
         if cache_key:
             create_kwargs["prompt_cache_key"] = cache_key
+        extra = kimi_effort_body(self._model, self._thinking_effort)
+        if extra:
+            create_kwargs["extra_body"] = extra
 
         stream = client.chat.completions.create(**create_kwargs)
         for chunk in stream:

@@ -22,5 +22,6 @@ def register(api) -> None:
         test_key_model="kimi-k3",
         tool_schema="openai",
         clear_model_cache=clear_model_cache,
+        shows_thinking_effort=True,
     )
     api.log("Kimi gateway contribution active (Providers)")
