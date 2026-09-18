@@ -14,7 +14,7 @@ for p in _here.parents:
         sys.path.insert(0, str(cand))
         break
 
-from kimi_provider import kimi_effort_body, kimi_supports_thinking
+from kimi_provider import kimi_effort_body, kimi_supports_thinking, thinking_menu
 
 
 def test_kimi_effort_body() -> None:
@@ -27,6 +27,9 @@ def test_kimi_effort_body() -> None:
     assert kimi_effort_body("kimi-k2.5", "off") == {"thinking": {"type": "disabled"}}
     assert kimi_effort_body("kimi-k2.6", "high") == {"thinking": {"type": "enabled"}}
     assert kimi_effort_body("kimi-k2.7-code", "high") == {}
+    assert thinking_menu("kimi-k2.7-code") is None
+    assert thinking_menu("kimi-k3")["levels"][0]["id"] == "off"
+    assert thinking_menu("kimi-k2.5")["levels"][0]["thinking_tokens"] == 0
 
 
 if __name__ == "__main__":

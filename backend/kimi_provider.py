@@ -29,6 +29,31 @@ def kimi_supports_thinking(model: str) -> bool:
     return "kimi-k3" in mid or "k2.5" in mid or "k2-5" in mid or "k2.6" in mid or "k2-6" in mid
 
 
+def thinking_menu(model: str) -> dict | None:
+    if not kimi_supports_thinking(model):
+        return None
+    mid = (model or "").strip().lower()
+    if "kimi-k3" in mid:
+        return {
+            "lo": "Faster",
+            "hi": "Smarter",
+            "levels": [
+                {"id": "off", "label": "Off", "thinking_tokens": 0, "hint": "lowest available (reasoning_effort=low)"},
+                {"id": "low", "label": "Low", "thinking_tokens": None, "hint": "reasoning_effort=low, no token cap"},
+                {"id": "medium", "label": "Med", "thinking_tokens": None, "hint": "reasoning_effort=high, no token cap"},
+                {"id": "high", "label": "High", "thinking_tokens": None, "hint": "reasoning_effort=max, no token cap"},
+            ],
+        }
+    return {
+        "lo": "Faster",
+        "hi": "Smarter",
+        "levels": [
+            {"id": "off", "label": "Off", "thinking_tokens": 0, "hint": "thinking disabled"},
+            {"id": "high", "label": "On", "thinking_tokens": None, "hint": "thinking enabled, no token cap"},
+        ],
+    }
+
+
 def kimi_effort_body(model: str, thinking_effort: str) -> dict[str, Any]:
     mid = (model or "").strip().lower()
     effort = normalize_thinking_effort(thinking_effort)
