@@ -31,4 +31,7 @@ def register(api) -> None:
         clear_model_cache=clear_model_cache,
         shows_thinking_effort=True,
     )
+    from . import graph_nodes
+
+    graph_nodes.register_nodes(api)
     api.log("Kimi gateway contribution active (Providers)")

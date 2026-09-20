@@ -1,9 +1,9 @@
 {
   "id": "kimi",
   "kind": "plugin",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "label": "Kimi",
-  "description": "Kimi API (Moonshot Open Platform) for Settings → LLMs. Install from Store → Gateways, then enable to show Kimi under Providers & Keys.",
+  "description": "Kimi API (Moonshot Open Platform) for Settings \u2192 LLMs. Install from Store \u2192 Gateways, then enable to show Kimi under Providers & Keys.",
   "min_app_version": "1.2.45",
   "default_enabled": true,
   "secret_keys": [
@@ -52,6 +52,83 @@
           "body": "Press Back to return to the provider list.",
           "advance": "require_click",
           "mode": "rect"
+        }
+      ]
+    },
+    "automations": {
+      "nodes": [
+        {
+          "id": "kimi.complete",
+          "label": "Kimi complete",
+          "group": "Kimi",
+          "description": "One-shot prompt through the Kimi gateway. Writes text onto the run.",
+          "config_fields": [
+            {
+              "id": "prompt",
+              "label": "Prompt",
+              "type": "textarea"
+            },
+            {
+              "id": "model",
+              "label": "Model",
+              "type": "model",
+              "provider": "kimi"
+            }
+          ]
+        }
+      ],
+      "templates": [
+        {
+          "id": "kimi-complete",
+          "label": "Kimi complete",
+          "icon": "\u2728",
+          "systems": [
+            "pipeline"
+          ],
+          "description": "Chat prompt through Kimi, then finish.",
+          "graph": {
+            "nodes": [
+              {
+                "id": "s",
+                "type": "start.chat",
+                "x": 40,
+                "y": 80,
+                "config": {},
+                "label": "Chat",
+                "description": ""
+              },
+              {
+                "id": "c",
+                "type": "kimi.complete",
+                "x": 280,
+                "y": 80,
+                "config": {},
+                "label": "Complete",
+                "description": ""
+              },
+              {
+                "id": "f",
+                "type": "pipeline.finish",
+                "x": 520,
+                "y": 80,
+                "config": {},
+                "label": "Finish",
+                "description": ""
+              }
+            ],
+            "edges": [
+              {
+                "source": "s",
+                "target": "c",
+                "kind": "main"
+              },
+              {
+                "source": "c",
+                "target": "f",
+                "kind": "main"
+              }
+            ]
+          }
         }
       ]
     }
