@@ -35,3 +35,24 @@ def test_followup_comes_after_previous_reply():
     assert roles == ["user", "assistant", "tool", "assistant", "user"]
     assert out[-2]["content"] == "Here is the answer."
     assert out[-1]["content"] == "follow up"
+
+
+def test_reasoning_content_goes_back_inside_a_tool_loop():
+    """Kimi's thinking models want the assistant message back as returned, reasoning included."""
+    msgs = [
+        ProviderMessage(role="user", content="wire the device"),
+        ProviderMessage(
+            role="assistant",
+            content="",
+            thinking="Read status first.",
+            tool_calls=[ToolCallRequest(id="t1", name="ducky_get_status", arguments={})],
+        ),
+        ProviderMessage(role="tool", tool_call_id="t1", content='{"ok":true}'),
+        ProviderMessage(role="assistant", content="Done.", thinking="Status was fine."),
+        ProviderMessage(role="assistant", content="No thoughts here."),
+    ]
+    out = KimiProvider("k", "kimi-k2-thinking")._to_openai_messages("sys", msgs)
+    assert out[2]["tool_calls"] and out[2]["reasoning_content"] == "Read status first."
+    assert out[4]["reasoning_content"] == "Status was fine."
+    assert "reasoning_content" not in out[5]
+    assert "reasoning_content" not in out[1] and "reasoning_content" not in out[3]

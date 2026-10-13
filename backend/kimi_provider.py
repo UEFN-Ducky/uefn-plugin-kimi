@@ -68,6 +68,14 @@ def kimi_effort_body(model: str, thinking_effort: str) -> dict[str, Any]:
     return {}
 
 
+def _attach_reasoning(msg: dict[str, Any], m: ProviderMessage) -> None:
+    """Pass the step's ``reasoning_content`` back, as Kimi's thinking models require
+    inside a tool-call loop (and across turns for the models that keep thinking):
+    the assistant message goes back as the API returned it."""
+    if (m.thinking or "").strip():
+        msg["reasoning_content"] = m.thinking
+
+
 class KimiProvider:
     def __init__(self, api_key: str, model: str, *, thinking_effort: str = "off", **_kw: Any) -> None:
         self._api_key = api_key
@@ -98,28 +106,31 @@ class KimiProvider:
                 )
                 continue
             if m.role == "assistant" and m.tool_calls:
-                out.append(
-                    {
-                        "role": "assistant",
-                        "content": m.content or None,
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": json.dumps(tc.arguments),
-                                },
-                            }
-                            for tc in m.tool_calls
-                        ],
-                    }
-                )
+                msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": m.content or None,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.name,
+                                "arguments": json.dumps(tc.arguments),
+                            },
+                        }
+                        for tc in m.tool_calls
+                    ],
+                }
+                _attach_reasoning(msg, m)
+                out.append(msg)
                 continue
             if m.role == "user" and m.attachments:
                 out.append({"role": "user", "content": build_openai_user_content(m.content, m.attachments)})
                 continue
-            out.append({"role": m.role, "content": m.content})
+            msg = {"role": m.role, "content": m.content}
+            if m.role == "assistant":
+                _attach_reasoning(msg, m)
+            out.append(msg)
         return out
 
     async def stream_turn(
