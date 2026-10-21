@@ -6,6 +6,7 @@
   "description": "Kimi API (Moonshot Open Platform) for Settings \u2192 LLMs. Install from Store \u2192 Gateways, then enable to show Kimi under Providers & Keys.",
   "min_app_version": "1.2.45",
   "default_enabled": true,
+  "data_sharing": false,
   "secret_keys": [
     "kimi"
   ],
