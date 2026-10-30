@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, AsyncIterator
 
 from backend.agent.multimodal_content import build_openai_user_content
@@ -74,6 +75,19 @@ def _attach_reasoning(msg: dict[str, Any], m: ProviderMessage) -> None:
     the assistant message goes back as the API returned it."""
     if (m.thinking or "").strip():
         msg["reasoning_content"] = m.thinking
+
+
+# Core's default (429 / rate limit / quota) plus Moonshot's balance wording, which can
+# arrive without the status code: "Your account … is suspended due to insufficient balance,
+# please recharge your account".
+_QUOTA_RE = re.compile(
+    r"\b429\b|rate[_ ]?limit|insufficient_quota|quota|insufficient balance|recharge your account",
+    re.IGNORECASE,
+)
+
+
+def is_quota_error(text: str) -> bool:
+    return bool(_QUOTA_RE.search(text or ""))
 
 
 class KimiProvider:

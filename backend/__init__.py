@@ -18,7 +18,7 @@ def _fetch_usage(api_key: str, **kw: Any) -> Any:
 
 
 def register(api) -> None:
-    from .kimi_provider import KimiProvider
+    from .kimi_provider import KimiProvider, is_quota_error
     from .model_fetch import clear_model_cache
 
     api.register_llm_provider(
@@ -30,6 +30,7 @@ def register(api) -> None:
         tool_schema="openai",
         clear_model_cache=clear_model_cache,
         shows_thinking_effort=True,
+        is_quota_error=is_quota_error,
     )
     from . import graph_nodes
 
