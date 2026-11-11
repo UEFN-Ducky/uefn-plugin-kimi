@@ -105,6 +105,10 @@ def fetch_live(api_key: str, url: str, headers: list[tuple[str, str]]) -> dict[s
         return {"windows": []}
 
 
-def fetch_usage(api_key: str, *, model: str = "") -> dict[str, Any]:
+def fetch_usage(api_key: str, *, model: str = "", base_url: str = "") -> dict[str, Any]:
     key = (api_key or "").strip()
-    return fetch_live(key, "https://api.moonshot.ai/v1/models", [("Authorization", f"Bearer {key}")])
+    if not key:
+        return {"windows": []}
+    from .kimi_provider import resolve_base
+
+    return fetch_live(key, resolve_base(key, base_url) + "/models", [("Authorization", f"Bearer {key}")])

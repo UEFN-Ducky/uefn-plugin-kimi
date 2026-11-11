@@ -8,13 +8,13 @@ from typing import Any
 def _fetch_models(api_key: str, **kw: Any) -> Any:
     from .model_fetch import fetch_models
 
-    return fetch_models(api_key, verify=bool(kw.get("verify", False)))
+    return fetch_models(api_key, verify=bool(kw.get("verify", False)), base_url=str(kw.get("base_url") or ""))
 
 
 def _fetch_usage(api_key: str, **kw: Any) -> Any:
     from .usage import fetch_usage
 
-    return fetch_usage(api_key, model=str(kw.get("model") or ""))
+    return fetch_usage(api_key, model=str(kw.get("model") or ""), base_url=str(kw.get("base_url") or ""))
 
 
 def register(api) -> None:

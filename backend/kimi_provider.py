@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any, AsyncIterator
@@ -19,22 +20,70 @@ from backend.agent.providers.thinking import ThinkSplitter, reasoning_from_delta
 from backend.agent.thinking_effort import normalize_thinking_effort
 
 KIMI_BASE_URL = "https://api.moonshot.ai/v1"
+# Kimi issues keys from three places and none works on another's server (Kimi's error
+# reference: 401 "Invalid Authentication" is most often a key used on the wrong base URL):
+# the API platform, a Kimi Code subscription, and the China platform.
+KIMI_BASES = (KIMI_BASE_URL, "https://api.kimi.ai/coding/v1", "https://api.moonshot.cn/v1")
+_BASE_BY_KEY: dict[str, str] = {}  # sha256(key) -> the server that accepted it
+
+
+def _probe(base: str, key: str) -> int:
+    """HTTP status of a free models listing with this key (0 = could not reach the server)."""
+    try:
+        import httpx
+
+        return httpx.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"}, timeout=8.0).status_code
+    except Exception:
+        return 0
+
+
+def find_base(api_key: str, base_url: str = "") -> tuple[str, int]:
+    """(server this key works on, last HTTP status). ``base_url`` set on the account wins.
+    A key no server accepts gets the platform's URL and the status it answered."""
+    key = (api_key or "").strip()
+    explicit = (base_url or "").strip().rstrip("/")
+    bases = (explicit,) if explicit else KIMI_BASES
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    if not explicit and digest in _BASE_BY_KEY:
+        return _BASE_BY_KEY[digest], 200
+    if not key:
+        return bases[0], 401
+    status = 0
+    for base in bases:
+        code = _probe(base, key)
+        if code == 200:
+            if not explicit:
+                _BASE_BY_KEY[digest] = base
+            return base, 200
+        status = code or status
+    return bases[0], status
+
+
+def resolve_base(api_key: str, base_url: str = "") -> str:
+    return find_base(api_key, base_url)[0]
+
 
 _K3_EFFORT = {"low": "low", "medium": "high", "high": "max"}
+# kimi-k3, kimi-k3.1-pro, and Kimi Code's own ids: k3, k3.1-pro, k3-256k.
+_K3_RE = re.compile(r"(?:^|[-/])k3(?:$|[.\-])")
+
+
+def _is_k3(mid: str) -> bool:
+    return bool(_K3_RE.search(mid))
 
 
 def kimi_supports_thinking(model: str) -> bool:
     mid = (model or "").strip().lower()
     if "k2.7" in mid or "k2-7" in mid:
         return False
-    return "kimi-k3" in mid or "k2.5" in mid or "k2-5" in mid or "k2.6" in mid or "k2-6" in mid
+    return _is_k3(mid) or "k2.5" in mid or "k2-5" in mid or "k2.6" in mid or "k2-6" in mid
 
 
 def thinking_menu(model: str) -> dict | None:
     if not kimi_supports_thinking(model):
         return None
     mid = (model or "").strip().lower()
-    if "kimi-k3" in mid:
+    if _is_k3(mid):
         return {
             "lo": "Faster",
             "hi": "Smarter",
@@ -58,7 +107,7 @@ def thinking_menu(model: str) -> dict | None:
 def kimi_effort_body(model: str, thinking_effort: str) -> dict[str, Any]:
     mid = (model or "").strip().lower()
     effort = normalize_thinking_effort(thinking_effort)
-    if "kimi-k3" in mid:
+    if _is_k3(mid):
         if effort == "off":
             return {"reasoning_effort": "low"}
         return {"reasoning_effort": _K3_EFFORT.get(effort, "high")}
@@ -69,19 +118,34 @@ def kimi_effort_body(model: str, thinking_effort: str) -> dict[str, Any]:
     return {}
 
 
-def _attach_reasoning(msg: dict[str, Any], m: ProviderMessage) -> None:
+def kimi_thinks(model: str, thinking_effort: str) -> bool:
+    """This request runs with thinking on (K3 always does; K2.5/2.6 unless Off)."""
+    body = kimi_effort_body(model, thinking_effort)
+    return "reasoning_effort" in body or (body.get("thinking") or {}).get("type") == "enabled"
+
+
+def _attach_reasoning(msg: dict[str, Any], m: ProviderMessage, *, required: bool = False) -> None:
     """Pass the step's ``reasoning_content`` back, as Kimi's thinking models require
     inside a tool-call loop (and across turns for the models that keep thinking):
-    the assistant message goes back as the API returned it."""
+    the assistant message goes back as the API returned it.
+
+    ``required``: thinking is on and this is a tool-call message. One that has no thinking
+    recorded (made by another model, or an older chat) still needs the field, or Kimi
+    answers 400 "thinking is enabled but reasoning_content is missing in assistant tool
+    call message" and the chat can never continue."""
     if (m.thinking or "").strip():
         msg["reasoning_content"] = m.thinking
+    elif required:
+        msg["reasoning_content"] = " "
 
 
-# Core's default (429 / rate limit / quota) plus Moonshot's balance wording, which can
-# arrive without the status code: "Your account … is suspended due to insufficient balance,
-# please recharge your account".
+# Core's default (429 / rate limit / quota) plus Kimi's wordings that can arrive without
+# the status code: the platform's "Your account … is suspended due to insufficient balance,
+# please recharge your account", and Kimi Code's "You've reached your 5-hour usage limit",
+# "Your credit balance is insufficient", "Extra Usage balance has run out".
 _QUOTA_RE = re.compile(
-    r"\b429\b|rate[_ ]?limit|insufficient_quota|quota|insufficient balance|recharge your account",
+    r"\b429\b|rate[_ ]?limit|insufficient_quota|quota|insufficient balance|recharge your account"
+    r"|usage limit|credit balance is insufficient|extra usage",
     re.IGNORECASE,
 )
 
@@ -91,15 +155,17 @@ def is_quota_error(text: str) -> bool:
 
 
 class KimiProvider:
-    def __init__(self, api_key: str, model: str, *, thinking_effort: str = "off", **_kw: Any) -> None:
+    def __init__(self, api_key: str, model: str, *, thinking_effort: str = "off", base_url: str = "",
+                 **_kw: Any) -> None:
         self._api_key = api_key
         self._model = model
         self._thinking_effort = normalize_thinking_effort(thinking_effort)
+        self._base_url = (base_url or "").strip()
 
     def _client(self):
         from openai import OpenAI
 
-        return OpenAI(api_key=self._api_key, base_url=KIMI_BASE_URL)
+        return OpenAI(api_key=self._api_key, base_url=resolve_base(self._api_key, self._base_url))
 
     def _to_openai_messages(
         self,
@@ -109,6 +175,7 @@ class KimiProvider:
         cache: PromptCachePayload | None = None,
     ) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = list(openai_system_messages(cache, fallback_system=system))
+        thinks = kimi_thinks(self._model, self._thinking_effort)
         for m in messages:
             if m.role == "tool":
                 out.append(
@@ -135,7 +202,7 @@ class KimiProvider:
                         for tc in m.tool_calls
                     ],
                 }
-                _attach_reasoning(msg, m)
+                _attach_reasoning(msg, m, required=thinks)
                 out.append(msg)
                 continue
             if m.role == "user" and m.attachments:
@@ -240,14 +307,16 @@ class KimiProvider:
         )
 
     async def test_connection(self) -> tuple[bool, str]:
-        try:
-            client = self._client()
-            r = client.chat.completions.create(
-                model=self._model,
-                max_tokens=8,
-                messages=[{"role": "user", "content": "ping"}],
-            )
-            _ = r.choices[0].message.content
-            return True, "Kimi OK"
-        except Exception as e:
-            return False, str(e)
+        """Is the key good? One free models listing per Kimi server, never a generated reply:
+        that cost tokens, took long on a thinking model, and failed a good Kimi Code or China
+        key (wrong server) and a good key whose plan lacks the test model."""
+        base, status = find_base(self._api_key, self._base_url)
+        if status == 200:
+            where = {KIMI_BASES[1]: " (Kimi Code)", KIMI_BASES[2]: " (China platform)"}.get(base, "")
+            return True, f"Kimi OK{where}"
+        if status == 0:
+            return False, "Could not reach Kimi. Check your internet connection and try again."
+        if status in (401, 403):
+            return False, ("Kimi did not accept this key on its API platform, Kimi Code or the China "
+                           "platform. Copy the whole key again from the page that issued it.")
+        return False, f"Kimi answered HTTP {status} to this key. Try again in a minute."

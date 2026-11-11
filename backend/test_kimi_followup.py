@@ -37,6 +37,33 @@ def test_followup_comes_after_previous_reply():
     assert out[-1]["content"] == "follow up"
 
 
+def test_a_tool_call_with_no_thinking_recorded_still_carries_the_field_when_thinking_is_on():
+    """Kimi: 400 'thinking is enabled but reasoning_content is missing in assistant tool call
+    message at index 2'. A chat started on another model could never continue on K3."""
+    msgs = [
+        ProviderMessage(role="user", content="go"),
+        ProviderMessage(role="assistant", content="", tool_calls=[ToolCallRequest(id="t1", name="ping", arguments={})]),
+        ProviderMessage(role="tool", tool_call_id="t1", content="{}"),
+        ProviderMessage(role="assistant", content="Done."),
+    ]
+    out = KimiProvider("k", "kimi-k3")._to_openai_messages("sys", msgs)
+    assert out[2]["tool_calls"] and out[2]["reasoning_content"].strip() == "" and out[2]["reasoning_content"]
+    assert "reasoning_content" not in out[4]  # only tool-call messages need it
+    on = KimiProvider("k", "kimi-k2.6", thinking_effort="high")._to_openai_messages("sys", msgs)
+    off = KimiProvider("k", "kimi-k2.6", thinking_effort="off")._to_openai_messages("sys", msgs)
+    assert "reasoning_content" in on[2] and "reasoning_content" not in off[2]
+
+
+def test_quota_wordings_from_kimi_code_switch_the_key():
+    from kimi_provider import is_quota_error
+
+    for text in ("You've reached your 5-hour usage limit. Your quota will reset when the current 5-hour window ends.",
+                 "Your credit balance is insufficient. To continue, purchase extra usage or upgrade your plan",
+                 "Your organization's Extra Usage balance has run out."):
+        assert is_quota_error(text), text
+    assert not is_quota_error("Your current subscription does not have access to k3.1-pro")
+
+
 def test_reasoning_content_goes_back_inside_a_tool_loop():
     """Kimi's thinking models want the assistant message back as returned, reasoning included."""
     msgs = [

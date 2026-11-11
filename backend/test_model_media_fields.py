@@ -41,6 +41,7 @@ def _load_module():
     sys.modules["kimi_gw"] = pkg
     prov = types.ModuleType("kimi_gw.kimi_provider")  # heavy; thinking helpers are irrelevant here
     prov.KIMI_BASE_URL = "https://api.moonshot.ai/v1"
+    prov.resolve_base = lambda key, base_url="": base_url or prov.KIMI_BASE_URL
     prov.kimi_supports_thinking = lambda mid: False
     prov.thinking_menu = lambda mid: None
     sys.modules["kimi_gw.kimi_provider"] = prov
@@ -62,6 +63,39 @@ def test_media_fields_from_record():
 
 def test_audio_from_modalities():
     assert _info({"input_modalities": ["text", "audio"]}).supports_audio is True
+
+
+def test_list_models_capability_flags_are_read():
+    """K2 and K3 ids don't say 'vision' or a size: List Models' own fields do."""
+    info = _info({"context_length": 262144, "supports_image_in": True, "supports_video_in": True})
+    assert (info.context_limit, info.supports_vision, info.supports_video) == (262144, True, True)
+    bare = _info({})
+    assert (bare.context_limit, bare.supports_vision) == (None, False)
+
+
+def test_a_failed_fetch_is_not_remembered_as_an_empty_list(monkeypatch):
+    """One network blip left the picker with no Kimi models for 6 hours."""
+    mod = _load()
+    calls = []
+
+    class Client:
+        def __init__(self, **kw):
+            calls.append(kw["base_url"])
+            self.models = self
+
+        def list(self):
+            if len(calls) == 1:
+                raise OSError("network down")
+            return types.SimpleNamespace(data=[types.SimpleNamespace(id="kimi-k3")])
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=Client))
+    saved = {k: sys.modules.pop(k) for k in list(sys.modules) if k == "backend" or k.startswith("backend.")}
+    try:
+        assert mod._fetch_kimi("key") == []
+        assert [m.id for m in mod._fetch_kimi("key")] == ["kimi-k3"]  # asked again, not the cached []
+        assert [m.id for m in mod._fetch_kimi("key")] == ["kimi-k3"] and len(calls) == 2  # now cached
+    finally:
+        sys.modules.update(saved)
 
 
 def test_media_fields_unknown_without_record_data():

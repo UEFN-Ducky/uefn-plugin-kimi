@@ -10,7 +10,7 @@ from typing import Any
 
 from backend.agent.model_fetch import ModelInfo, _cache_put
 
-from .kimi_provider import KIMI_BASE_URL
+from .kimi_provider import resolve_base
 
 _log = logging.getLogger(__name__)
 _CACHE_MAX = 512
@@ -33,8 +33,8 @@ def clear_model_cache() -> None:
     _KIMI_MODELS_CACHE.clear()
 
 
-def fetch_models(api_key: str, **_kw: Any) -> list[ModelInfo]:
-    return _fetch_kimi(api_key)
+def fetch_models(api_key: str, **kw: Any) -> list[ModelInfo]:
+    return _fetch_kimi(api_key, str(kw.get("base_url") or ""))
 
 
 def _media_fields(record: dict[str, Any] | None) -> dict[str, Any]:
@@ -44,9 +44,10 @@ def _media_fields(record: dict[str, Any] | None) -> dict[str, Any]:
     known = isinstance(mods, list) and bool(mods)
     lowered = [str(m).lower() for m in mods] if known else []
     max_images = rec.get("max_images")
+    video_flag = rec.get("supports_video_in")  # Kimi's List Models capability flag
     return {
         "max_images": max_images if isinstance(max_images, int) and not isinstance(max_images, bool) else None,
-        "supports_video": ("video" in lowered) if known else None,
+        "supports_video": ("video" in lowered) if known else (video_flag if isinstance(video_flag, bool) else None),
         "supports_audio": ("audio" in lowered) if known else None,
     }
 
@@ -62,10 +63,17 @@ def _record_of(item: Any) -> dict[str, Any]:
 
 def _info_from_id(model_id: str, record: dict[str, Any] | None = None) -> ModelInfo:
     mid = model_id.strip()
-    vision = "vision" in mid.lower()
+    rec = record or {}
+    # Kimi's List Models gives each model's context length and capability flags; the id only
+    # says so for the old moonshot-v1-* names (K2 and K3 read as no vision, unknown size).
+    image_flag = rec.get("supports_image_in")
+    vision = image_flag if isinstance(image_flag, bool) else "vision" in mid.lower()
     ctx: int | None = None
     lower = mid.lower()
-    if "128k" in lower:
+    listed = rec.get("context_length")
+    if isinstance(listed, int) and not isinstance(listed, bool) and listed > 0:
+        ctx = listed
+    elif "128k" in lower:
         ctx = 131072
     elif "32k" in lower:
         ctx = 32768
@@ -85,8 +93,8 @@ def _info_from_id(model_id: str, record: dict[str, Any] | None = None) -> ModelI
     )
 
 
-def _fetch_kimi(api_key: str) -> list[ModelInfo]:
-    cache_key = _key_hash(api_key or "")
+def _fetch_kimi(api_key: str, base_url: str = "") -> list[ModelInfo]:
+    cache_key = _key_hash((api_key or "") + "|" + (base_url or ""))
     hit = _KIMI_MODELS_CACHE.get(cache_key)
     if hit is not None and (time.time() - hit[0]) < _CACHE_TTL_S:
         return list(hit[1])
@@ -95,7 +103,7 @@ def _fetch_kimi(api_key: str) -> list[ModelInfo]:
     try:
         from openai import OpenAI
 
-        client = OpenAI(api_key=api_key, base_url=KIMI_BASE_URL)
+        client = OpenAI(api_key=api_key, base_url=resolve_base(api_key, base_url))
         listed = client.models.list()
         for item in listed.data or []:
             mid = str(getattr(item, "id", "") or "").strip()
@@ -105,5 +113,6 @@ def _fetch_kimi(api_key: str) -> list[ModelInfo]:
     except Exception as exc:
         _log.warning("Kimi /v1/models unavailable: %s", exc)
 
-    _cache_put(_KIMI_MODELS_CACHE, cache_key, (time.time(), models))
+    if models:  # never an empty list: one failed fetch left the picker empty for 6 hours
+        _cache_put(_KIMI_MODELS_CACHE, cache_key, (time.time(), models))
     return list(models)
